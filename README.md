@@ -41,6 +41,17 @@ platform settings, the platform owner and the demo shop (safe to run again).
 
 ## Shop options, SMS and day close
 
+- **Shop category, zilla, thana** (`Store.shopType`, `district`, `thana`): asked on sign-up and in the admin
+  console's New shop (all three needed). Keys live in `src/utils/shopTypes.js` (same keys as the client's
+  `src/shopTypes.js`, which holds the labels, the words a kind uses instead of Category / Brand / Product,
+  e.g. pharmacy → Generic / Company / Medicine, and the setup suggestions). A kind sets the starting shop
+  options (mobile → IMEI on, clothing → variants on). Zilla / thana are saved in English; the client's
+  `src/data/bdGeo.js` gives the Bangla names.
+- **Setup assistant** (`Store.setupPending`, `/settings/setup`, `/settings/setup/skip`): a new shop's admin
+  lands on `/setup` and gets, step by step, units, categories, brands, expense categories, suppliers and
+  sample products for its kind, all editable before saving. Names that already exist are reused, never
+  doubled, so it can be opened again from Settings → Shop details. Skipping adds the starter units and
+  expense categories if the shop has none.
 - **Variants** (shop option `useVariants`): a product with `hasVariants` is a template; each variant is a
   Product of its own (`parentId`, `variantName`, own barcode / prices / stock), so the stock engine is
   unchanged. Names show as "T-Shirt (Red / XL)" (`L.fullName`). The parent itself can't get stock.

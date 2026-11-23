@@ -5,6 +5,7 @@ const apiError = require("./apiError");
 const { logger } = require("./logger");
 const { defaultRoles } = require("./permissions");
 const { normEmail, normPhone, toDate } = require("./helperFunction");
+const { isShopType, typeOptions, cleanText } = require("./shopTypes");
 
 /* ---------------- platform settings (one row, cached a minute) ---------------- */
 let cache = { at: 0, value: null };
@@ -104,17 +105,36 @@ const makeShopCode = async (client, name, wanted) => {
   throw apiError.conflict("Could not make a shop code, enter one");
 };
 
-/** Ready-made lists so a new shop can start selling at once. */
+/** Ready-made lists so a shop that skips the setup assistant can still start selling. */
 const STARTER_UNITS = ["Pcs", "Box", "Kg", "Gram", "Litre", "Dozen", "Packet"];
 const STARTER_EXPENSES = ["Rent", "Salary", "Electricity", "Transport", "Others"];
 
+/** Adds the starter units / expense categories when the shop has none yet. */
+const ensureStarter = async (tx, tenant) => {
+  const [units, expenses] = await Promise.all([tx.unit.count({ where: { storeId: tenant.storeId } }), tx.expenseCategory.count({ where: { storeId: tenant.storeId } })]);
+  if (!units) await tx.unit.createMany({ data: STARTER_UNITS.map((n) => ({ ...tenant, name: n })) });
+  if (!expenses) await tx.expenseCategory.createMany({ data: STARTER_EXPENSES.map((n) => ({ ...tenant, name: n })) });
+};
+
+/** Shop category, zilla and thana of a new shop: all three are needed. */
+const shopPlace = ({ shopType, district, thana }) => {
+  if (!isShopType(shopType)) throw apiError.badRequest("Select the shop category");
+  const d = cleanText(district);
+  if (!d) throw apiError.badRequest("Select the zilla");
+  const th = cleanText(thana);
+  if (!th) throw apiError.badRequest("Select or type the thana");
+  return { shopType, district: d, thana: th };
+};
+
 /**
- * Create a shop: company, store, the four default roles, starter units / expense categories
- * and its admin (owner) login. Runs inside the given transaction.
+ * Create a shop: company, store, the four default roles and its admin (owner) login. Runs inside the
+ * given transaction. Units, categories, brands … come from the setup assistant the owner sees first
+ * (`setupPending`); skipping it adds the starter units and expense categories.
  */
-const createShop = async (tx, { businessName, shopName, code, modules, planId, trialEndsAt, paidUntil, address, phone, source, owner, smsBalance = 0 }) => {
+const createShop = async (tx, { businessName, shopName, code, modules, planId, trialEndsAt, paidUntil, address, phone, source, owner, smsBalance = 0, shopType, district, thana }) => {
   const name = String(shopName || businessName || "").trim();
   if (!name) throw apiError.badRequest("Enter the shop name");
+  const place = shopPlace({ shopType, district, thana });
   if (!String(owner?.name || "").trim()) throw apiError.badRequest("Enter the owner's name");
   if (!owner?.email && !owner?.phone) throw apiError.badRequest("Give the owner an email or phone number to log in with");
   if (String(owner?.password || "").length < 6) throw apiError.badRequest("Password must be at least 6 characters");
@@ -142,6 +162,9 @@ const createShop = async (tx, { businessName, shopName, code, modules, planId, t
       phone: phone || owner.phone || null,
       source: source || "admin",
       smsBalance: Math.max(0, parseInt(smsBalance, 10) || 0),
+      ...place,
+      ...typeOptions(place.shopType),
+      setupPending: true,
     },
   });
   const tenant = { storeId: store.id, companyId: company.id };
@@ -151,8 +174,6 @@ const createShop = async (tx, { businessName, shopName, code, modules, planId, t
     const role = await tx.role.create({ data: { ...tenant, ...r } });
     if (r.key === "admin") adminRole = role;
   }
-  await tx.unit.createMany({ data: STARTER_UNITS.map((n) => ({ ...tenant, name: n })) });
-  await tx.expenseCategory.createMany({ data: STARTER_EXPENSES.map((n) => ({ ...tenant, name: n })) });
 
   const email = normEmail(owner.email) || null;
   const ownerPhone = owner.phone ? String(owner.phone).trim() : null;
@@ -183,4 +204,4 @@ const checkUserLimit = async (client, storeId) => {
   }
 };
 
-module.exports = { getPlatformSettings, clearSettingsCache, billingOf, audit, loginTaken, makeShopCode, createShop, checkUserLimit, STARTER_UNITS };
+module.exports = { getPlatformSettings, clearSettingsCache, billingOf, audit, loginTaken, makeShopCode, createShop, checkUserLimit, ensureStarter, STARTER_UNITS };

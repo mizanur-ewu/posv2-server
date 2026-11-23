@@ -289,6 +289,11 @@ model Store {
   subscription Subscription @default(both) // modules this shop gets (from its plan)
   address      String?
   phone        String?
+  // what the shop sells (src/utils/shopTypes.js) – drives the setup suggestions and some labels
+  shopType     String?
+  district     String? // zilla, English name (the client shows the Bangla name)
+  thana        String? // thana / upazila, English name or what the shop typed
+  setupPending Boolean    @default(false) // true until the owner finishes or skips the setup assistant
   // SaaS: plan and billing. No trialEndsAt and no paidUntil = never expires.
   status        ShopStatus @default(active)
   suspendReason String?

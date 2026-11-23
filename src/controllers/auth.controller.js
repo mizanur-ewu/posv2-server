@@ -100,13 +100,13 @@ exports.getPublicInfo = async (req, res, next) => {
 
 /**
  * Self sign-up: a new business opens its own shop on a free trial and is signed in as its admin.
- * Body: { businessName, ownerName, phone, email, password, modules }
+ * Body: { businessName, ownerName, phone, email, password, modules, shopType, district, thana }
  */
 exports.signup = async (req, res, next) => {
   try {
     const s = await getPlatformSettings();
     if (!s.signupEnabled) throw apiError.forbidden("New sign-ups are closed. Contact us to open a shop.");
-    const { businessName, ownerName, phone, email, password, modules, address } = req.body;
+    const { businessName, ownerName, phone, email, password, modules, address, shopType, district, thana } = req.body;
     if (!String(businessName || "").trim()) throw apiError.badRequest("Enter your shop or business name");
     if (!phone) throw apiError.badRequest("Enter your mobile number");
 
@@ -120,6 +120,9 @@ exports.signup = async (req, res, next) => {
         modules,
         planId,
         address,
+        shopType,
+        district,
+        thana,
         trialEndsAt: dayjs().add(s.trialDays, "day"),
         source: "signup",
         smsBalance: s.smsFreeCredits,

@@ -7,6 +7,7 @@ const { r2, toDate, normEmail, normPhone } = require("../../utils/helperFunction
 const { safeUser } = require("../../utils/viewHelper");
 const { getPlatformSettings, billingOf, audit, createShop, loginTaken } = require("../../utils/platform");
 const { signShopToken } = require("../auth.controller");
+const { isShopType, cleanText } = require("../../utils/shopTypes");
 
 const STORE_INCLUDE = { company: { select: { name: true } }, plan: { select: { id: true, name: true, priceMonthly: true, priceYearly: true, maxUsers: true, modules: true } } };
 
@@ -49,6 +50,10 @@ const shopRow = (store, settings, stats, sales) => ({
   paidUntil: store.paidUntil,
   address: store.address,
   phone: store.phone,
+  shopType: store.shopType,
+  district: store.district,
+  thana: store.thana,
+  setupPending: store.setupPending,
   notes: store.notes,
   source: store.source,
   smsBalance: store.smsBalance,
@@ -142,7 +147,7 @@ const startDates = (b, settings) => {
 
 /**
  * New shop with its owner login.
- * Body: { businessName, shopName, code, modules, planId, address, phone, notes, billing: {mode, trialDays, paidUntil}, owner: {name, email, phone, password} }
+ * Body: { businessName, shopName, code, modules, planId, address, phone, shopType, district, thana, notes, billing: {mode, trialDays, paidUntil}, owner: {name, email, phone, password} }
  */
 exports.createShop = async (req, res, next) => {
   try {
@@ -157,6 +162,9 @@ exports.createShop = async (req, res, next) => {
         planId: b.planId,
         address: b.address,
         phone: b.phone,
+        shopType: b.shopType,
+        district: b.district,
+        thana: b.thana,
         source: "admin",
         smsBalance: settings.smsFreeCredits,
         ...startDates(b.billing, settings),
@@ -184,6 +192,13 @@ exports.updateShop = async (req, res, next) => {
     }
     ["address", "phone", "notes"].forEach((k) => {
       if (b[k] !== undefined) data[k] = b[k] ? String(b[k]).trim() : null;
+    });
+    if (b.shopType !== undefined) {
+      if (!isShopType(b.shopType)) throw apiError.badRequest("Select the shop category");
+      data.shopType = b.shopType;
+    }
+    ["district", "thana"].forEach((k) => {
+      if (b[k] !== undefined) data[k] = cleanText(b[k]);
     });
     if (b.planId !== undefined) {
       if (b.planId) {

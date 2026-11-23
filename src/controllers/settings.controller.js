@@ -8,6 +8,7 @@ const { normPhone, normEmail, tenant, toDate } = require("../utils/helperFunctio
 const { getPlatformSettings, loginTaken, checkUserLimit } = require("../utils/platform");
 const smsService = require("../services/sms/sms");
 const { cleanPermissions, fullPermissions } = require("../utils/permissions");
+const { isShopType, cleanText } = require("../utils/shopTypes");
 const { safeUser } = require("../utils/viewHelper");
 
 const checkPassword = (pw) => {
@@ -48,7 +49,7 @@ exports.getMeta = async (req, res, next) => {
     return res.status(200).json({
       status: "success",
       data: {
-        store: { id: store.id, code: store.code, name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, smsBalance: store.smsBalance, companyId: store.companyId, companyName: store.company?.name, createdAt: store.createdAt },
+        store: { id: store.id, code: store.code, name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, shopType: store.shopType, district: store.district, thana: store.thana, setupPending: store.setupPending, smsBalance: store.smsBalance, companyId: store.companyId, companyName: store.company?.name, createdAt: store.createdAt },
         subscription: store.subscription,
         billing: {
           ...req.billing,
@@ -94,6 +95,14 @@ exports.updateStore = async (req, res, next) => {
     ["address", "phone", "binNo"].forEach((k) => {
       if (b[k] !== undefined) data[k] = b[k] ? String(b[k]).trim() : null;
     });
+    // what the shop sells (labels and setup suggestions follow it) and where it is
+    if (b.shopType !== undefined) {
+      if (!isShopType(b.shopType)) throw apiError.badRequest("Select the shop category");
+      data.shopType = b.shopType;
+    }
+    ["district", "thana"].forEach((k) => {
+      if (b[k] !== undefined) data[k] = cleanText(b[k]);
+    });
     // optional features: product variants, IMEI / serial numbers
     if (b.useVariants !== undefined) data.useVariants = !!b.useVariants;
     if (b.useSerials !== undefined) data.useSerials = !!b.useSerials;
@@ -101,7 +110,7 @@ exports.updateStore = async (req, res, next) => {
     return res.status(200).json({
       status: "success",
       message: "Shop details saved",
-      data: { name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials },
+      data: { name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, shopType: store.shopType, district: store.district, thana: store.thana },
     });
   } catch (error) {
     logger.error(`Store update error: ${error.message}`);

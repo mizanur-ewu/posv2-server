@@ -15,6 +15,7 @@ const {
   clearData,
   getNotifications,
 } = require("../controllers/settings.controller");
+const { applySetup, skipSetup } = require("../controllers/setup.controller");
 const authenticateJWT = require("../middlewares/authenticateJWT");
 const authorizePermission = require("../middlewares/authorizePermission");
 
@@ -38,6 +39,10 @@ router.delete("/role/:id", authenticateJWT, authorizePermission("settings:edit")
 
 router.post("/user", authenticateJWT, authorizePermission("settings:edit"), createUser);
 router.patch("/user/:id", authenticateJWT, authorizePermission("settings:edit"), updateUser);
+
+// setup assistant of a new shop (can be run again from Settings)
+router.post("/setup", authenticateJWT, authorizePermission("settings:edit"), applySetup);
+router.post("/setup/skip", authenticateJWT, authorizePermission("settings:edit"), skipSetup);
 
 router.post("/clearData", authenticateJWT, authorizePermission("settings:edit"), clearData);
 
