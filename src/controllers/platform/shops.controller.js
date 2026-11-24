@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const dayjs = require("dayjs");
 const bcrypt = require("bcryptjs");
 const { logger } = require("../../utils/logger");
@@ -7,7 +8,8 @@ const { r2, toDate, normEmail, normPhone } = require("../../utils/helperFunction
 const { safeUser } = require("../../utils/viewHelper");
 const { getPlatformSettings, billingOf, audit, createShop, loginTaken } = require("../../utils/platform");
 const { signShopToken } = require("../auth.controller");
-const { isShopType, cleanText } = require("../../utils/shopTypes");
+const { isShopType, cleanText, typeOptions } = require("../../utils/shopTypes");
+const { defaultRoles } = require("../../utils/permissions");
 
 const STORE_INCLUDE = { company: { select: { name: true } }, plan: { select: { id: true, name: true, priceMonthly: true, priceYearly: true, maxUsers: true, modules: true } } };
 
@@ -332,22 +334,36 @@ exports.updateShopUser = async (req, res, next) => {
   }
 };
 
-/** Everything a shop owns, children first (some links are RESTRICT). */
+/** The business data of a shop, children first (some links are RESTRICT). Users, roles and billing are not in it. */
+const BUSINESS_MODELS = [
+  "salesReturnDetails", "salesReturn", "customerPayment", "invoiceDetails", "salesInvoice", "salesOrderDetails", "salesOrder",
+  "issueExpense", "productIssueDetails", "productIssue", "stockAdjustment", "discount", "supplierPayment", "stockDetails",
+  "stockSummary", "stock", "product", "unit", "category", "brand", "supplier", "expense", "expenseCategory", "staffDue",
+  "customer", "route", "area", "notification", "counter", "serialNumber", "warrantyClaim", "cashClosing", "smsLog", "employee",
+];
+
+/** Everything a shop owns: its business data, then its logins, roles and subscription payments. */
 const deleteShopData = async (tx, storeId) => {
   const where = { storeId };
-  const models = [
-    "salesReturnDetails", "salesReturn", "customerPayment", "invoiceDetails", "salesInvoice", "salesOrderDetails", "salesOrder",
-    "issueExpense", "productIssueDetails", "productIssue", "stockAdjustment", "discount", "supplierPayment", "stockDetails",
-    "stockSummary", "stock", "product", "unit", "category", "brand", "supplier", "expense", "expenseCategory", "staffDue",
-    "customer", "route", "area", "notification", "counter", "serialNumber", "warrantyClaim", "cashClosing", "smsLog", "employee", "user", "role", "subscriptionPayment",
-  ];
-  for (const m of models) await tx[m].deleteMany({ where });
+  for (const m of [...BUSINESS_MODELS, "user", "role", "subscriptionPayment"]) await tx[m].deleteMany({ where });
+};
+
+/**
+ * Deleting a shop or its data needs the secret password from the server .env (SHOP_DELETE_PASSWORD).
+ * Compared as hashes so the check takes the same time whatever was typed.
+ */
+const checkDeleteSecret = (typed) => {
+  const secret = process.env.SHOP_DELETE_PASSWORD;
+  if (!secret) throw apiError.badRequest("The delete password is not set. Add SHOP_DELETE_PASSWORD to the server .env file and restart it.");
+  const hash = (v) => crypto.createHash("sha256").update(String(v ?? "")).digest();
+  if (!crypto.timingSafeEqual(hash(typed), hash(secret))) throw apiError.forbidden("Wrong secret password");
 };
 
 /** Delete a shop and all its data for good. Body: { confirm: "<shop code>" }. Platform owner only. */
 exports.deleteShop = async (req, res, next) => {
   try {
     const store = await loadShop(req.params.id);
+    checkDeleteSecret(req.body?.secret);
     if (String(req.body?.confirm || "").trim().toUpperCase() !== store.code) {
       throw apiError.badRequest(`Type the shop code ${store.code} to confirm`);
     }
@@ -364,6 +380,52 @@ exports.deleteShop = async (req, res, next) => {
     return res.status(200).json({ status: "success", message: `${store.name} and all its data were deleted`, data: null });
   } catch (error) {
     logger.error(`Platform delete shop error: ${error.message}`);
+    next(error);
+  }
+};
+
+/**
+ * Wipe a shop's data but keep the shop: its plan, billing, payments, SMS credits and the owner's login stay.
+ * Every other user, product, sale, stock, customer … is deleted, the roles go back to the defaults and the
+ * setup assistant (with the suggestions for the shop's category) shows again, as for a new shop.
+ * Body: { secret }. Platform owner only.
+ */
+exports.resetShopData = async (req, res, next) => {
+  try {
+    const store = await loadShop(req.params.id);
+    checkDeleteSecret(req.body?.secret);
+    const owner = await prisma.user.findFirst({
+      where: { storeId: store.id, status: "active", role: { system: true } },
+      orderBy: { createdAt: "asc" },
+      include: { role: true },
+    });
+    if (!owner) throw apiError.badRequest("This shop has no active admin to keep. Delete the whole shop instead.");
+
+    await prisma.$transaction(
+      async (tx) => {
+        const where = { storeId: store.id };
+        for (const m of BUSINESS_MODELS) await tx[m].deleteMany({ where });
+        const others = await tx.user.findMany({ where: { ...where, id: { not: owner.id } }, select: { id: true } });
+        if (others.length) {
+          await tx.passwordReset.deleteMany({ where: { userId: { in: others.map((u) => u.id) } } });
+          await tx.user.deleteMany({ where: { id: { in: others.map((u) => u.id) } } });
+        }
+        await tx.role.deleteMany({ where: { ...where, id: { not: owner.roleId } } });
+        for (const r of defaultRoles().filter((x) => x.key !== owner.role.key)) {
+          await tx.role.create({ data: { ...r, storeId: store.id, companyId: store.companyId } });
+        }
+        await tx.store.update({
+          where: { id: store.id },
+          data: { setupPending: true, ...typeOptions(store.shopType), allowDue: true, payMethodIds: [] },
+        });
+      },
+      { timeout: 120000, maxWait: 20000 },
+    );
+    await audit(req.platformUser, "shop.reset", { store, detail: `kept owner ${owner.name}` });
+    logger.info(`Shop ${store.code} data wiped by platform user ${req.platformUser.id}`);
+    return res.status(200).json({ status: "success", message: `${store.name}: data deleted. ${owner.name} can sign in and set the shop up again.`, data: null });
+  } catch (error) {
+    logger.error(`Platform reset shop error: ${error.message}`);
     next(error);
   }
 };

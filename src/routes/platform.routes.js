@@ -27,6 +27,7 @@ router.post("/shops/:id/open", shops.openShop);
 router.post("/shops/:id/users/:userId/password", shops.resetUserPassword);
 router.patch("/shops/:id/users/:userId", shops.updateShopUser);
 router.delete("/shops/:id", requireOwner, shops.deleteShop);
+router.post("/shops/:id/reset", requireOwner, shops.resetShopData);
 router.post("/shops/:id/sms-credits", smsAdmin.addShopCredits);
 
 router.get("/sms", smsAdmin.getSmsOverview);
