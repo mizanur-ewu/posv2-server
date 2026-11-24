@@ -2,6 +2,7 @@ const dayjs = require("dayjs");
 const { r2, r3, toDate, ymd } = require("../helperFunction");
 const { fail, lotAvailable, allocate, nextNo } = require("./stockWork");
 const { takeSerials, markSold, backInStock } = require("./serials");
+const { CASH } = require("./constants");
 
 const recalcDue = (inv) => r2(inv.totalAmount - inv.returnedAmount - (inv.totalPaid - inv.refundedAmount));
 
@@ -21,6 +22,12 @@ const checkMethods = async (tx, ids) => {
  * Every SKU line is allocated to lots FEFO → FIFO before anything changes (all or nothing).
  * One InvoiceDetails row per lot, with the lot's exact purchase price.
  * With issueId the goods come from that sales out's lots (issued → sold).
+ *
+ * POS (wholeTaka): the total is taken down to whole taka, the paisa counted as discount, so every
+ * figure on the bill is a whole number and gross − discount + VAT still equals the total.
+ * Payments: { paymentMethodId, amount, reference? } (reference = bKash / card transaction id).
+ * Only cash can be more than the bill (the rest is change handed back); other methods are applied
+ * first. allowDue = false: the bill must be paid in full.
  */
 const createInvoice = async (work, payload) => {
   const { tx, ctx } = work;
@@ -40,6 +47,8 @@ const createInvoice = async (work, payload) => {
     remark = "",
     viaApp = false,
     fromSettlement = false,
+    wholeTaka = false,
+    allowDue = true,
   } = payload;
 
   if (!lines.length) fail("Invoice has no lines");
@@ -137,14 +146,27 @@ const createInvoice = async (work, payload) => {
   const taxable = Math.max(0, inv.subtotal - inv.totalDiscount);
   inv.vatAmount = r2((taxable * inv.vatPercent) / 100);
   inv.totalAmount = r2(taxable + inv.vatAmount);
+  if (wholeTaka) {
+    const whole = Math.floor(inv.totalAmount + 0.000001);
+    inv.totalDiscount = r2(inv.totalDiscount + (inv.totalAmount - whole));
+    inv.totalAmount = whole;
+  }
 
-  const paidTotal = r2(payments.reduce((a, p) => a + (Number(p.amount) || 0), 0));
-  if (channel === "pos" && !soldToId && paidTotal + 0.001 < inv.totalAmount) fail("Walk-in customer must pay the full amount");
+  if (payments.some((p) => Number(p.amount) < 0)) fail("Payment can't be negative");
+  const given = payments.map((p) => ({ ...p, amount: r2(Number(p.amount) || 0) })).filter((p) => p.amount > 0);
+  const paidTotal = r2(given.reduce((a, p) => a + p.amount, 0));
+  const nonCash = r2(given.filter((p) => p.paymentMethodId !== CASH).reduce((a, p) => a + p.amount, 0));
+  if (nonCash > inv.totalAmount + 0.001) fail("Only cash can be more than the bill. Lower the bKash / card amount.");
+  if (paidTotal + 0.001 < inv.totalAmount) {
+    if (channel === "pos" && !soldToId) fail("Walk-in customer must pay the full amount");
+    if (!allowDue) fail("This shop doesn't sell on due. Take the full amount.");
+  }
 
+  // other methods first, cash last: what is over the bill is cash handed back as change
   let toApply = Math.min(paidTotal, inv.totalAmount);
   const paymentRows = [];
-  payments.forEach((p) => {
-    const amt = r2(Math.min(Number(p.amount) || 0, toApply));
+  [...given.filter((p) => p.paymentMethodId !== CASH), ...given.filter((p) => p.paymentMethodId === CASH)].forEach((p) => {
+    const amt = r2(Math.min(p.amount, toApply));
     toApply = r2(toApply - amt);
     if (amt > 0) {
       paymentRows.push({
@@ -154,6 +176,7 @@ const createInvoice = async (work, payload) => {
         amount: amt,
         paymentMethodId: p.paymentMethodId,
         date: toDate(when),
+        remark: p.reference ? String(p.reference).trim().slice(0, 60) || null : null,
         createdById: ctx.userId,
       });
     }

@@ -45,6 +45,11 @@ const connectDB = async () => {
   try {
     await prisma.$connect();
     logger.info("✅ Database connection established successfully");
+    // the global payment methods (bKash, Nagad … added over time) – names and order kept up to date
+    const { PAYMENT_METHODS } = require("../utils/stock/constants");
+    for (const m of PAYMENT_METHODS) {
+      await basePrisma.paymentMethod.upsert({ where: { id: m.id }, update: { name: m.name, sortOrder: m.sortOrder }, create: m });
+    }
   } catch (error) {
     logger.error("❌ Database connection failed", error);
     throw new apiError(500, "Database connection failed");

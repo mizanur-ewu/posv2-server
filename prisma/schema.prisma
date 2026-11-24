@@ -306,6 +306,8 @@ model Store {
   binNo         String? // VAT registration no (BIN), printed on receipts
   useVariants   Boolean    @default(false) // products can have variants (size, colour …)
   useSerials    Boolean    @default(false) // products can track IMEI / serial numbers and warranty
+  allowDue      Boolean    @default(true) // POS: a named customer may pay part now and owe the rest
+  payMethodIds  String[]   @default([]) // payment methods the shop takes at POS; empty = DEFAULT_SHOP_METHODS
   smsBalance    Int        @default(0) // SMS credits left (topped up by the platform)
   smsSettings   Json       @default("{}") // { events: { sale, payment, dailySummary }, templates: {…}, ownerPhone }
   createdAt    DateTime     @default(now())
@@ -353,7 +355,7 @@ model Store {
   @@unique([id, companyId])
 }
 
-// Global lookup – fixed ids (pm_cash, pm_card, pm_mfs, pm_bank)
+// Global lookup – fixed ids, kept up to date at start-up (src/utils/stock/constants.js PAYMENT_METHODS)
 model PaymentMethod {
   id        String @id
   name      String
@@ -915,6 +917,7 @@ model SalesOrderDetails {
 // ---------------------------------------------------------------------
 // Sales invoice
 // totalAmount = subtotal − (line discounts + bill discount + voucher) + vatAmount
+// (POS: the paisa of the total are dropped to whole taka and counted in totalDiscount)
 // totalDue    = totalAmount − returnedAmount − (totalPaid − refundedAmount)
 // ---------------------------------------------------------------------
 model SalesInvoice {

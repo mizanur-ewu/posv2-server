@@ -13,12 +13,7 @@ const { defaultRoles } = require("../src/utils/permissions");
 
 const prisma = new PrismaClient();
 
-const PAYMENT_METHODS = [
-  { id: "pm_cash", name: "Cash", sortOrder: 1 },
-  { id: "pm_card", name: "Card", sortOrder: 2 },
-  { id: "pm_mfs", name: "Mobile Banking", sortOrder: 3 },
-  { id: "pm_bank", name: "Bank Transfer", sortOrder: 4 },
-];
+const { PAYMENT_METHODS } = require("../src/utils/stock/constants");
 
 const STORE = { code: "DHK", name: "Dhanmondi Central Store", subscription: "both" };
 const COMPANY = { name: "Stockflow Demo Ltd." };

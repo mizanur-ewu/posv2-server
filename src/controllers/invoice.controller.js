@@ -97,9 +97,12 @@ exports.createPosInvoice = async (req, res, next) => {
       if (changed) throw apiError.forbidden("You can't change the price");
     }
 
+    const store = await prisma.store.findUnique({ where: { id: req.storeId }, select: { allowDue: true } });
     const invoice = await stockTransaction(ctxOf(req), (work) =>
       createInvoice(work, {
         channel: "pos",
+        wholeTaka: true,
+        allowDue: store?.allowDue !== false,
         soldToId: soldToId || null,
         lines,
         billDiscount: Number(billDiscount) || 0,

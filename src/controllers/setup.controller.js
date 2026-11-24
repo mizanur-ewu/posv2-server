@@ -5,6 +5,7 @@ const { r2, tenant } = require("../utils/helperFunction");
 const { nextCounter } = require("../utils/stock/stockWork");
 const { ensureStarter } = require("../utils/platform");
 const { isShopType, cleanText } = require("../utils/shopTypes");
+const { cleanMethodIds } = require("../utils/stock/constants");
 
 /* ---------------- setup assistant ---------------- */
 /*
@@ -59,7 +60,7 @@ const money = (v, label) => {
 
 /**
  * Save what the owner kept in the setup assistant.
- * Body: { shopType?, useVariants?, useSerials?, units: [name], categories: [name], brands: [name],
+ * Body: { shopType?, useVariants?, useSerials?, allowDue?, payMethodIds?, units: [name], categories: [name], brands: [name],
  *         expenseCategories: [name], suppliers: [{ name, phone }],
  *         products: [{ name, category, brand, unit, purchasePrice, sellingPrice, trackSerial, warrantyMonths }] }
  * Products point at units / categories / brands by name (from the lists above or already in the shop).
@@ -100,6 +101,8 @@ exports.applySetup = async (req, res, next) => {
         if (b.shopType) data.shopType = b.shopType;
         if (b.useVariants !== undefined) data.useVariants = !!b.useVariants;
         if (b.useSerials !== undefined) data.useSerials = !!b.useSerials;
+        if (b.allowDue !== undefined) data.allowDue = !!b.allowDue;
+        if (b.payMethodIds !== undefined) data.payMethodIds = cleanMethodIds(b.payMethodIds);
         const store = await tx.store.update({ where: { id: req.storeId }, data });
 
         // units the products need are added even when the owner removed them from the unit list

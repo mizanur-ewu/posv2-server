@@ -9,6 +9,7 @@ const { getPlatformSettings, loginTaken, checkUserLimit } = require("../utils/pl
 const smsService = require("../services/sms/sms");
 const { cleanPermissions, fullPermissions } = require("../utils/permissions");
 const { isShopType, cleanText } = require("../utils/shopTypes");
+const { shopMethodIds, cleanMethodIds } = require("../utils/stock/constants");
 const { safeUser } = require("../utils/viewHelper");
 
 const checkPassword = (pw) => {
@@ -49,7 +50,7 @@ exports.getMeta = async (req, res, next) => {
     return res.status(200).json({
       status: "success",
       data: {
-        store: { id: store.id, code: store.code, name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, shopType: store.shopType, district: store.district, thana: store.thana, setupPending: store.setupPending, smsBalance: store.smsBalance, companyId: store.companyId, companyName: store.company?.name, createdAt: store.createdAt },
+        store: { id: store.id, code: store.code, name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, allowDue: store.allowDue, payMethodIds: shopMethodIds(store), shopType: store.shopType, district: store.district, thana: store.thana, setupPending: store.setupPending, smsBalance: store.smsBalance, companyId: store.companyId, companyName: store.company?.name, createdAt: store.createdAt },
         subscription: store.subscription,
         billing: {
           ...req.billing,
@@ -106,11 +107,14 @@ exports.updateStore = async (req, res, next) => {
     // optional features: product variants, IMEI / serial numbers
     if (b.useVariants !== undefined) data.useVariants = !!b.useVariants;
     if (b.useSerials !== undefined) data.useSerials = !!b.useSerials;
+    // POS: sell on due or not, and the payment methods the shop takes
+    if (b.allowDue !== undefined) data.allowDue = !!b.allowDue;
+    if (b.payMethodIds !== undefined) data.payMethodIds = cleanMethodIds(b.payMethodIds);
     const store = await prisma.store.update({ where: { id: req.storeId }, data });
     return res.status(200).json({
       status: "success",
       message: "Shop details saved",
-      data: { name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, shopType: store.shopType, district: store.district, thana: store.thana },
+      data: { name: store.name, address: store.address, phone: store.phone, binNo: store.binNo, useVariants: store.useVariants, useSerials: store.useSerials, allowDue: store.allowDue, payMethodIds: shopMethodIds(store), shopType: store.shopType, district: store.district, thana: store.thana },
     });
   } catch (error) {
     logger.error(`Store update error: ${error.message}`);
